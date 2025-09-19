@@ -1,0 +1,26 @@
+# veritas-sih2025/docker-compose.yml
+
+services:
+  veritas-model-server:
+    build:
+      context: .
+      dockerfile: ./veritas/ml/model_server/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mounts your local models directory into the container for the server to use
+      - ./models/veritas:/app/models
+    command: uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+
+  veritas-backend:
+    build:
+      context: .
+      dockerfile: ./veritas/backend/Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      # This ensures Python can find your shared 'tools' and 'veritas.ml' modules
+      - PYTHONPATH=/app
+    depends_on:
+      - veritas-model-server
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

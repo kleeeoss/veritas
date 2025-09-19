@@ -1,0 +1,31 @@
+veritas-sih2025/
+├── data/
+│   └── synthetic/
+│       └── veritas/
+│           ├── genuine/
+│           ├── forged/
+│           └── labels.csv
+├── models/
+│   └── veritas/
+│       ├── v0/
+│       └── v1/
+├── tools/
+│   ├── pdf/
+│   ├── qr/
+│   └── signing/
+├── veritas/
+│   ├── backend/
+│   │   ├── app/
+│   │   │   └── main.py
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   ├── docs/
+│   ├── frontend/
+│   └── ml/
+│       ├── model_server/
+│       │   ├── Dockerfile
+│       │   ├── requirements.txt
+│       │   └── server.py
+│       ├── ocr_pipeline.py
+│       └── train.py
+└── docker-compose.yml
