@@ -130,5 +130,3 @@ You will need to restart the Docker containers to load the newly trained model.
     
 
 ---
-
-If you want a version of this as `README.md` in the repo or want me to include example API calls, status endpoints, or badges (build/coverage), tell me and I will add them to this file.
