@@ -116,3 +116,50 @@
 .main-nav a.active {
   background-color: #646cff;
 }
+
+.image-container {
+  position: relative; /* Establishes the coordinate system for layering */
+  width: 100%; /* Or a fixed width/height */
+  max-width: 800px; /* Example max width */
+  margin: auto; /* Center it */
+}
+
+.base-image, .heatmap-overlay {
+  position: absolute; /* Allows elements to be stacked */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.base-image {
+  /* The base image doesn't need transparency */
+  opacity: 1;
+}
+
+.heatmap-overlay {
+  /* Make the heatmap 50% transparent so you can see through it */
+  opacity: 0.5;
+  /* This prevents the heatmap from interfering with mouse clicks */
+  pointer-events: none;
+}
+
+.App-container {
+  /* Use Flexbox for layout */
+  display: flex;
+
+  /* Stack items vertically (nav on top of content) */
+  flex-direction: column;
+
+  /* Center items horizontally */
+  align-items: center;
+
+  /* Center items vertically */
+  justify-content: center;
+
+  /* Ensure the container takes up the full screen height */
+  min-height: 100vh;
+
+  /* Center text within child elements like h1 */
+  text-align: center;
+}

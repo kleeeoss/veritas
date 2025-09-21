@@ -7,8 +7,9 @@ import cv2
 from PIL import Image
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
+from torchvision import models, transforms
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +17,6 @@ from fastapi.middleware.cors import CORSMiddleware
 # --- 1. Initialize FastAPI App ---
 app = FastAPI()
 
-# Allow all origins for development (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,18 +24,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-``
-# --- 2. Load Your Model ---
-# Note: Make sure your model is in evaluation mode
-# model = YourModelClass()
-# model.load_state_dict(torch.load("path/to/your/model_v0.pt", map_location=torch.device('cpu')))
-# model.eval()
-# For demonstration, we'll create a placeholder model
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+
+# --- 2. Load Your Trained Model (Corrected Method) ---
+# This is the corrected section. It builds a ResNet18 model first,
+# then modifies the final layer, and THEN loads your saved weights.
+# This ensures the architecture perfectly matches the saved file.
+
+# Step 1: Load the standard ResNet18 architecture with default weights
+model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+
+# Step 2: Get the number of input features for the final layer
+num_ftrs = model.fc.in_features
+
+# Step 3: Replace the final layer with a new one for our binary task (1 output neuron)
+model.fc = nn.Linear(num_ftrs, 1)
+
+# Step 4: Now, load the trained weights from your file into this matching architecture
+MODEL_PATH = "/app/models/v1/model_v1.pt"
+model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
+
+# Step 5: Set the model to evaluation mode
 model.eval()
+print("✅ Custom forgery detection model loaded successfully.")
 
 # --- 3. Image Preprocessing ---
-# This should match the transformations used during training
 preprocess = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
@@ -43,97 +55,79 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# --- 4. Grad-CAM and Heatmap Generation Logic ---
-# Global variables to store activations and gradients
+# --- (Grad-CAM logic remains the same) ---
 activations = None
 gradients = None
+
 
 def backward_hook(module, grad_input, grad_output):
     global gradients
     gradients = grad_output[0]
 
+
 def forward_hook(module, input, output):
     global activations
     activations = output
 
-def generate_heatmap(model, input_tensor, original_image, class_idx):
-    """
-    Generates a Grad-CAM heatmap and overlays it on the original image.
-    """
-    # Find the target layer (last conv layer)
-    target_layer = model.layer4[1].conv2 
-    
-    # Register hooks
-    target_layer.register_forward_hook(forward_hook)
-    target_layer.register_backward_hook(backward_hook)
 
-    # Forward pass
+def generate_heatmap(model, input_tensor, original_image):
+    # Target the last convolutional layer in ResNet18
+    target_layer = model.layer4[1].conv2
+
+    handle_forward = target_layer.register_forward_hook(forward_hook)
+    handle_backward = target_layer.register_full_backward_hook(backward_hook)
+
     output = model(input_tensor)
-    
-    # Backward pass
     model.zero_grad()
-    output[0][class_idx].backward()
 
-    # Get activations and gradients
+    # We backpropagate the output directly for Grad-CAM
+    output.backward()
+
     pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
-    
-    # Weight the activations with gradients
     for i in range(activations.shape[1]):
         activations[:, i, :, :] *= pooled_gradients[i]
-        
-    # Generate heatmap
+
     heatmap = torch.mean(activations, dim=1).squeeze().detach().cpu()
     heatmap = np.maximum(heatmap, 0)
-    heatmap /= torch.max(heatmap)
-    
-    # Resize and apply colormap
+
+    if torch.max(heatmap) > 0:
+        heatmap /= torch.max(heatmap)
+
     heatmap = cv2.resize(np.array(heatmap), (original_image.shape[1], original_image.shape[0]))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
-    # Superimpose heatmap on original image
-    superimposed_img = heatmap * 0.4 + original_image
+    superimposed_img = heatmap * 0.5 + original_image
+    superimposed_img = np.clip(superimposed_img, 0, 255)
     superimposed_img = np.uint8(superimposed_img)
-    
+
+    # Remove the hooks after use
+    handle_forward.remove()
+    handle_backward.remove()
+
     return superimposed_img
 
 
 # --- 5. Prediction Endpoint ---
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # Read and process image
     contents = await file.read()
     pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+
     input_tensor = preprocess(pil_image).unsqueeze(0)
+    input_tensor.requires_grad = True
 
-    # Get model prediction
-    with torch.no_grad():
-        output = model(input_tensor)
-        probabilities = F.softmax(output, dim=1)
-        
-    # Assuming class 1 is "forged"
-    forgery_score = probabilities[0][1].item() 
-    predicted_class_idx = torch.argmax(probabilities).item()
+    output = model(input_tensor)
+    # Apply sigmoid to the raw output to get a probability score
+    forgery_score = torch.sigmoid(output).item()
 
-    # Convert PIL image to OpenCV format for heatmap overlay
-    # Note: OpenCV uses BGR, PIL uses RGB
     original_cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-    
-    # Generate the heatmap
-    heatmap_image = generate_heatmap(model, input_tensor, original_cv_image, predicted_class_idx)
+    heatmap_image = generate_heatmap(model, input_tensor, original_cv_image)
 
-    # Encode heatmap image to base64
     _, buffer = cv2.imencode('.jpg', heatmap_image)
     heatmap_base64 = base64.b64encode(buffer).decode('utf-8')
-    
-    # Return JSON response
+
     return {
         "forgery_score": forgery_score,
         "heatmap": heatmap_base64
-        # You can add the OCR text here as well if it's part of this service
     }
-
-# Entry point for running the server (optional)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
