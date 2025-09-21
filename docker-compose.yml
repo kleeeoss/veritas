@@ -6,10 +6,13 @@ services:
       context: .
       dockerfile: ./veritas/ml/model_server/Dockerfile
     ports:
-      - "8008:8002"
+      # CORRECTED: Maps host port 8008 to the container's port 8001
+      - "8008:8001"
     volumes:
       # Mounts your local models directory into the container for the server to use
       - ./models/veritas:/app/models
+      # Mounts the server code for hot-reloading
+      - ./veritas/ml/model_server:/app
     command: uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 
   veritas-backend:
@@ -19,8 +22,11 @@ services:
     ports:
       - "8002:8000"
     environment:
-      # This ensures Python can find your shared 'tools' and 'veritas.ml' modules
       - PYTHONPATH=/app
     depends_on:
       - veritas-model-server
+    volumes:
+      # Mounts the backend code for hot-reloading
+      - ./veritas/backend/app:/app/app
+      - ./tools:/app/tools
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
