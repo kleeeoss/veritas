@@ -1,6 +1,6 @@
 # veritas-sih2025/veritas/ml/model_server/Dockerfile
 
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
