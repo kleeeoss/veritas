@@ -1,24 +1,24 @@
 import qrcode
+import io
+import base64
+import json
 from qrcode.image.styledpil import StyledPilImage
 from qrcode.image.styles.moduledrawers import RoundedModuleDrawer
-import os
-from typing import Optional
 
-def generate_qr_code(data: str, output_dir: str, filename: str = "qr_code.png") -> Optional[str]:
+def create_qr_code(data: dict) -> str:
     """
-    Generates a stylized QR code image from the given data.
+    Generates a stylized QR code from the given dictionary,
+    and returns it as a base64 encoded string.
 
     Args:
-        data: The string data to encode in the QR code (e.g., a verification URL).
-        output_dir: The directory to save the generated image in.
-        filename: The name of the output image file.
+        data: A dictionary to encode into the QR code.
 
     Returns:
-        The full path to the generated QR code image, or None on failure.
+        A base64 encoded string representation of the QR code image.
     """
     try:
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Convert the dictionary to a JSON string to embed in the QR code
+        data_str = json.dumps(data, indent=None, separators=(",", ":"))
 
         qr = qrcode.QRCode(
             version=1,
@@ -26,7 +26,7 @@ def generate_qr_code(data: str, output_dir: str, filename: str = "qr_code.png") 
             box_size=10,
             border=4,
         )
-        qr.add_data(data)
+        qr.add_data(data_str)
         qr.make(fit=True)
 
         img = qr.make_image(
@@ -34,17 +34,17 @@ def generate_qr_code(data: str, output_dir: str, filename: str = "qr_code.png") 
             module_drawer=RoundedModuleDrawer()
         )
 
-        output_path = os.path.join(output_dir, filename)
-        img.save(output_path)
-        print(f"QR Code successfully generated at: {output_path}")
-        return output_path
+        # Save the image to an in-memory buffer
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+
+        # Encode the bytes in the buffer to a base64 string
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        # Return the standard data URI for the frontend
+        return f"data:image/png;base64,{img_str}"
+
     except Exception as e:
         print(f"Error generating QR code: {e}")
-        return None
-
-if __name__ == '__main__':
-    print("--- Running QR Code Generator Test ---")
-    test_data = "https://nullpoint.sih.gov/verify/cert_hash_12345"
-    test_output_dir = "demos/generated_certs"
-    generate_qr_code(data=test_data, output_dir=test_output_dir, filename="sample_qr.png")
-    print("--- Test Complete ---")
+        # In case of an error, return an empty string or handle it as needed
+        return ""
