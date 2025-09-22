@@ -29,4 +29,5 @@ services:
       # Mounts the backend code for hot-reloading
       - ./veritas/backend/app:/app/app
       - ./tools:/app/tools
+      - ./data/reviews:/app/reviews
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

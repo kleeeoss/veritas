@@ -1,52 +1,37 @@
 # In veritas/backend/app/main.py
 import requests
 import logging
-import tempfile
+import json
+import uuid
+import base64
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 # --- Tool Imports ---
 from tools.signing.sign_helper import sign_data
 from tools.qr.qr_generator import create_qr_code
-
-# --- NEW: Import our OCR function ---
 from veritas.ml.ocr_pipeline import extract_text_from_image
 
 from fastapi import FastAPI, status, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# --- FastAPI App Initialization ---
-app = FastAPI(
-    title="Veritas Backend API",
-    description="API for Veritas document forgery detection.",
-    version="0.1.0"
-)
+app = FastAPI(title="Veritas Backend API", version="0.1.0")
 
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
+origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
-# --- Constants ---
+# --- Constants & Paths ---
 MODEL_SERVER_URL = "http://veritas-model-server:8001/predict"
+REVIEW_FILE_PATH = Path("/app/reviews/reviews.json")  # Path inside the container
 
 
-# --- Pydantic Models (with ocr_data type updated) ---
-class HealthCheck(BaseModel):
-    status: str = "OK"
+# --- Pydantic Models ---
+class HealthCheck(BaseModel): status: str = "OK"
 
 
 class VerificationResponse(BaseModel):
@@ -55,87 +40,104 @@ class VerificationResponse(BaseModel):
     message: str
     forgery_score: Optional[float] = None
     heatmap: Optional[str] = None
-    ocr_text: Optional[str] = None  # UPDATED: Changed from 'ocr_data' to 'ocr_text' for simplicity
+    ocr_text: Optional[str] = None
+    needs_review: Optional[bool] = False
 
 
-# Models for Day 2 Certificate Issuance
-class DocumentData(BaseModel):
+# --- NEW: Models for Admin Review ---
+class ReviewItem(BaseModel):
+    id: str
     filename: str
-    ocr_text: str
-    timestamp: str
+    image_data: str  # base64 encoded image
+    forgery_score: float
 
 
-class FullCertificateResponse(BaseModel):
-    original_data: DocumentData
-    signature: str
-    qr_code_image: str
+class ReviewDecision(BaseModel):
+    decision: str  # "approve" or "reject"
 
 
 # --- API Endpoints ---
-@app.get("/health", response_model=HealthCheck, status_code=status.HTTP_200_OK)
-def get_health():
-    return HealthCheck(status="OK")
+@app.get("/health", response_model=HealthCheck)
+def get_health(): return HealthCheck(status="OK")
 
 
-@app.post("/veritas/verify", response_model=VerificationResponse, status_code=status.HTTP_200_OK)
+@app.post("/veritas/verify", response_model=VerificationResponse)
 async def verify_document(file: UploadFile = File(...)):
-    logging.info(f"Received file for verification: {file.filename}")
-
-    if file.content_type not in ["image/jpeg", "image/png"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Please upload a JPEG or PNG image."
-        )
-
-    # Read the image content once
     image_bytes = await file.read()
+    ocr_result_text = extract_text_from_image(image_bytes)
 
     try:
-        # --- NEW: Perform OCR on the image bytes ---
-        ocr_result_text = extract_text_from_image(image_bytes)
-        logging.info(f"OCR result for {file.filename}: {ocr_result_text[:100]}...")
-
-        # Send to model server for prediction
-        logging.info(f"Sending {file.filename} to model server for prediction.")
         files = {"file": (file.filename, image_bytes, file.content_type)}
         response = requests.post(MODEL_SERVER_URL, files=files, timeout=30)
         response.raise_for_status()
-
         data = response.json()
-        forgery_score = data.get("forgery_score")
-        heatmap = data.get("heatmap")
-        logging.info(f"Received forgery score: {forgery_score} for {file.filename}")
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Model service call failed: {e}")
-        raise HTTPException(status_code=503, detail=f"Model service unavailable: {e}")
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+        raise HTTPException(status_code=503, detail=f"Model service unavailable: {e}")
+
+    forgery_score = data.get("forgery_score")
+    needs_review_flag = 0.4 <= forgery_score <= 0.6
+
+    # --- NEW: Logic to save document for review ---
+    if needs_review_flag:
+        logging.info(f"Flagging {file.filename} for manual review.")
+        review_id = str(uuid.uuid4())
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        new_review = ReviewItem(
+            id=review_id,
+            filename=file.filename,
+            image_data=image_base64,
+            forgery_score=forgery_score
+        )
+
+        reviews = []
+        if REVIEW_FILE_PATH.exists():
+            with open(REVIEW_FILE_PATH, "r") as f:
+                reviews = json.load(f)
+
+        reviews.append(new_review.dict())
+        with open(REVIEW_FILE_PATH, "w") as f:
+            json.dump(reviews, f, indent=2)
 
     return VerificationResponse(
         filename=file.filename,
         content_type=file.content_type,
         message="File processed successfully.",
         forgery_score=forgery_score,
-        heatmap=heatmap,
-        # --- NEW: Add the actual OCR result to the response ---
-        ocr_text=ocr_result_text
+        heatmap=data.get("heatmap"),
+        ocr_text=ocr_result_text,
+        needs_review=needs_review_flag
     )
 
 
-@app.post("/veritas/issue-certificate", response_model=FullCertificateResponse, status_code=status.HTTP_201_CREATED)
-async def issue_certificate(document: DocumentData):
-    logging.info(f"Issuing certificate for {document.filename}")
+# --- NEW: Admin Review Endpoints ---
 
-    document_payload = document.dict()
-    signature = sign_data(document_payload)
+@app.get("/admin/reviews", response_model=List[ReviewItem])
+def get_reviews():
+    """Returns the list of all documents currently needing manual review."""
+    if not REVIEW_FILE_PATH.exists():
+        return []
+    with open(REVIEW_FILE_PATH, "r") as f:
+        return json.load(f)
 
-    qr_data = {"data": document_payload, "signature": signature}
-    qr_code_base64 = create_qr_code(qr_data)
 
-    return FullCertificateResponse(
-        original_data=document,
-        signature=signature,
-        qr_code_image=qr_code_base64
-    )
+@app.post("/admin/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+def process_review(review_id: str, decision: ReviewDecision):
+    """Processes a decision for a reviewed document (removes it from the list)."""
+    if not REVIEW_FILE_PATH.exists():
+        raise HTTPException(status_code=404, detail="Review file not found.")
+
+    with open(REVIEW_FILE_PATH, "r") as f:
+        reviews = json.load(f)
+
+    # Filter out the item that has been reviewed
+    updated_reviews = [item for item in reviews if item['id'] != review_id]
+
+    if len(updated_reviews) == len(reviews):
+        raise HTTPException(status_code=404, detail="Review item not found.")
+
+    with open(REVIEW_FILE_PATH, "w") as f:
+        json.dump(updated_reviews, f, indent=2)
+
+    logging.info(f"Processed review for {review_id} with decision: {decision.decision}")
+    return
