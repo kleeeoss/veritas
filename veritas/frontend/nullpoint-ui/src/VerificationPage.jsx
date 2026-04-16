@@ -2,6 +2,20 @@ import React, { useState } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8002';
 const API_TOKEN = import.meta.env.VITE_VERITAS_BEARER_TOKEN || '';
+const MAX_POLL_ATTEMPTS = 90;
+const POLL_INTERVAL_MS = 1000;
+
+const isValidBase64 = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  if (!/^[A-Za-z0-9+/=]+$/.test(value)) return false;
+  try {
+    const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
+    atob(padded);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 function VerificationPage() {
   // State to hold the selected file and its preview URL
@@ -15,9 +29,10 @@ function VerificationPage() {
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [jobStatus, setJobStatus] = useState('');
 
-  const safeHeatmap = analysisResult?.heatmap && /^[A-Za-z0-9+/=]+$/.test(analysisResult.heatmap)
+  const safeHeatmap = analysisResult?.heatmap && isValidBase64(analysisResult.heatmap)
     ? analysisResult.heatmap
     : null;
+  const safePreviewUrl = imagePreviewUrl && imagePreviewUrl.startsWith('blob:') ? imagePreviewUrl : '';
 
   // This function is triggered when a user selects a file
   const handleFileChange = (event) => {
@@ -63,8 +78,8 @@ function VerificationPage() {
 
       let pollCount = 0;
       let done = false;
-      while (!done && pollCount < 90) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      while (!done && pollCount < MAX_POLL_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         pollCount += 1;
         const jobRes = await fetch(`${API_BASE}/api/v1/veritas/jobs/${job.job_id}`, {
           headers: {
@@ -130,7 +145,7 @@ function VerificationPage() {
             {needsReview && <p className="review-status">Status: Needs Manual Review</p>}
 
             <div className="image-container" style={{ aspectRatio: '11/8.5' }}>
-              <img src={imagePreviewUrl} alt="Uploaded Certificate" className="base-image" />
+              <img src={safePreviewUrl} alt="Uploaded Certificate" className="base-image" />
               {safeHeatmap && (
                 <img
                   src={`data:image/jpeg;base64,${safeHeatmap}`}

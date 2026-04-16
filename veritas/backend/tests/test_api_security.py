@@ -8,7 +8,7 @@ import tempfile
 import time
 import unittest
 from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -91,13 +91,12 @@ class TestApiSecurity(unittest.TestCase):
             "Authorization": f"Bearer {self.verifier_token}",
             "Idempotency-Key": "idem-key-1",
         }
-        fake_payload = {"forgery_score": 0.51, "heatmap": "abc==", "model_version": "v1"}
+        fake_model = {"forgery_score": 0.51, "heatmap": "abc==", "model_version": "v1"}
 
         with patch("app.main.extract_text_from_image", return_value="ocr-text"), patch(
-            "app.main.requests.post"
-        ) as mocked_post:
-            mocked_post.return_value.raise_for_status.return_value = None
-            mocked_post.return_value.json.return_value = fake_payload
+            "app.main.call_model_service",
+            new=AsyncMock(return_value=fake_model),
+        ) as mocked_model:
 
             body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
             first = self.client.post("/api/v1/veritas/verify", headers=headers, files=body)
@@ -106,7 +105,7 @@ class TestApiSecurity(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.json(), second.json())
-        self.assertEqual(mocked_post.call_count, 1)
+        self.assertEqual(mocked_model.await_count, 1)
         self.assertIn("detectors", first.json())
         self.assertIn("risk_level", first.json())
 
@@ -117,13 +116,12 @@ class TestApiSecurity(unittest.TestCase):
 
     def test_async_job_completes(self) -> None:
         headers = {"Authorization": f"Bearer {self.verifier_token}", "Idempotency-Key": "job-1"}
-        fake_payload = {"forgery_score": 0.2, "heatmap": "abc==", "model_version": "v1"}
+        fake_model = {"forgery_score": 0.2, "heatmap": "abc==", "model_version": "v1"}
         body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
         with patch("app.main.extract_text_from_image", return_value="Certificate issued on 21/01/2026 for name"), patch(
-            "app.main.requests.post"
-        ) as mocked_post:
-            mocked_post.return_value.raise_for_status.return_value = None
-            mocked_post.return_value.json.return_value = fake_payload
+            "app.main.call_model_service",
+            new=AsyncMock(return_value=fake_model),
+        ):
             queued = self.client.post("/api/v1/veritas/verify-async", headers=headers, files=body)
             self.assertEqual(queued.status_code, 202)
             job_id = queued.json()["job_id"]
@@ -144,11 +142,12 @@ class TestApiSecurity(unittest.TestCase):
     def test_review_escalation_and_history(self) -> None:
         verifier_headers = {"Authorization": f"Bearer {self.verifier_token}"}
         reviewer_headers = {"Authorization": f"Bearer {self.reviewer_token}"}
-        fake_payload = {"forgery_score": 0.5, "heatmap": "abc==", "model_version": "v1"}
+        fake_model = {"forgery_score": 0.5, "heatmap": "abc==", "model_version": "v1"}
         body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
-        with patch("app.main.extract_text_from_image", return_value="random text"), patch("app.main.requests.post") as mocked_post:
-            mocked_post.return_value.raise_for_status.return_value = None
-            mocked_post.return_value.json.return_value = fake_payload
+        with patch("app.main.extract_text_from_image", return_value="random text"), patch(
+            "app.main.call_model_service",
+            new=AsyncMock(return_value=fake_model),
+        ):
             verify = self.client.post("/api/v1/veritas/verify", headers=verifier_headers, files=body)
             self.assertEqual(verify.status_code, 200)
 

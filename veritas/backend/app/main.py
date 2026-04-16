@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import requests
+import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -42,6 +42,13 @@ AUDIT_SIGNING_KEY = os.getenv("VERITAS_AUDIT_SIGNING_KEY", "dev-audit-key-change
 VERIFICATION_REVIEW_LOWER = float(os.getenv("VERIFICATION_REVIEW_LOWER", "0.4"))
 VERIFICATION_REVIEW_UPPER = float(os.getenv("VERIFICATION_REVIEW_UPPER", "0.6"))
 ASYNC_QUEUE_MAX = int(os.getenv("ASYNC_QUEUE_MAX", "1000"))
+OCR_MIN_TEXT_LENGTH = int(os.getenv("OCR_MIN_TEXT_LENGTH", "20"))
+OCR_LOW_STRUCTURE_SCORE = float(os.getenv("OCR_LOW_STRUCTURE_SCORE", "0.75"))
+OCR_MEDIUM_STRUCTURE_SCORE = float(os.getenv("OCR_MEDIUM_STRUCTURE_SCORE", "0.65"))
+OCR_PARTIAL_STRUCTURE_SCORE = float(os.getenv("OCR_PARTIAL_STRUCTURE_SCORE", "0.45"))
+OCR_GOOD_STRUCTURE_SCORE = float(os.getenv("OCR_GOOD_STRUCTURE_SCORE", "0.2"))
+OCR_EXPECTED_KEYWORDS = ["certificate", "issued", "name", "date"]
+DATE_PATTERN_REGEX = r"\b\d{2}[-/]\d{2}[-/]\d{4}\b"
 
 ALLOWED_CONTENT_TYPES: Set[str] = {"image/jpeg", "image/png"}
 ROLE_ADMIN = "admin"
@@ -653,15 +660,14 @@ def save_artifact(prefix: str, payload: bytes, ext: str) -> str:
 
 def calc_ocr_consistency_score(text: str) -> Tuple[float, List[str]]:
     lower = text.lower() if text else ""
-    keywords = ["certificate", "issued", "name", "date"]
-    hits = sum(1 for word in keywords if word in lower)
-    if len(lower) < 20:
-        return 0.75, ["OCR_TEXT_TOO_SHORT"]
+    hits = sum(1 for word in OCR_EXPECTED_KEYWORDS if word in lower)
+    if len(lower) < OCR_MIN_TEXT_LENGTH:
+        return OCR_LOW_STRUCTURE_SCORE, ["OCR_TEXT_TOO_SHORT"]
     if hits <= 1:
-        return 0.65, ["OCR_MISSING_CERTIFICATE_KEYWORDS"]
+        return OCR_MEDIUM_STRUCTURE_SCORE, ["OCR_MISSING_CERTIFICATE_KEYWORDS"]
     if hits >= 3:
-        return 0.2, ["OCR_STRUCTURE_CONSISTENT"]
-    return 0.45, ["OCR_PARTIAL_STRUCTURE"]
+        return OCR_GOOD_STRUCTURE_SCORE, ["OCR_STRUCTURE_CONSISTENT"]
+    return OCR_PARTIAL_STRUCTURE_SCORE, ["OCR_PARTIAL_STRUCTURE"]
 
 
 def calc_metadata_tamper_score(image_bytes: bytes) -> Tuple[float, List[str]]:
@@ -698,7 +704,7 @@ def calc_template_rule_score(text: str) -> Tuple[float, List[str]]:
     lower = text.lower() if text else ""
     reasons: List[str] = []
     score = 0.2
-    if not re.search(r"\b\d{2}[-/]\d{2}[-/]\d{4}\b", text or ""):
+    if not re.search(DATE_PATTERN_REGEX, text or ""):
         score += 0.25
         reasons.append("MISSING_DATE_PATTERN")
     if "certificate" not in lower:
@@ -712,13 +718,14 @@ def calc_template_rule_score(text: str) -> Tuple[float, List[str]]:
     return min(score, 1.0), reasons
 
 
-def call_external_verifier(request_hash: str) -> Tuple[float, List[str]]:
+async def call_external_verifier(request_hash: str) -> Tuple[float, List[str]]:
     if not EXTERNAL_VERIFY_URL:
         return 0.5, ["EXTERNAL_VERIFIER_NOT_CONFIGURED"]
     try:
-        r = requests.post(EXTERNAL_VERIFY_URL, json={"request_hash": request_hash}, timeout=5)
-        r.raise_for_status()
-        payload = r.json()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(EXTERNAL_VERIFY_URL, json={"request_hash": request_hash})
+            r.raise_for_status()
+            payload = r.json()
         verified = bool(payload.get("verified"))
         if verified:
             return 0.1, ["EXTERNAL_VERIFIER_CONFIRMED"]
@@ -734,7 +741,8 @@ async def call_model_service(image_bytes: bytes, filename: str, content_type: st
     for attempt in range(MODEL_RETRIES + 1):
         try:
             files = {"file": (filename, image_bytes, content_type)}
-            response = requests.post(MODEL_SERVER_URL, files=files, timeout=REQUEST_TIMEOUT_SECONDS)
+            async with httpx.AsyncClient(timeout=float(REQUEST_TIMEOUT_SECONDS)) as client:
+                response = await client.post(MODEL_SERVER_URL, files=files)
             response.raise_for_status()
             circuit_breaker.success()
             return response.json()
@@ -771,11 +779,22 @@ def compose_risk(detectors: List[DetectorScore]) -> Tuple[float, str, List[str]]
     return total, risk, sorted(set(reasons))
 
 
+def can_view_job(claims: Dict[str, Any], row: sqlite3.Row) -> bool:
+    roles = set(claims.get("roles", []))
+    actor = claims.get("sub", "unknown")
+    if actor == row["submitted_by"]:
+        return True
+    if ROLE_ADMIN in roles or ROLE_AUDITOR in roles:
+        return True
+    return False
+
+
 async def fetch_model_metadata() -> Dict[str, Any]:
     try:
-        res = requests.get(MODEL_METADATA_URL, timeout=5)
-        res.raise_for_status()
-        return res.json()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(MODEL_METADATA_URL)
+            res.raise_for_status()
+            return res.json()
     except Exception:
         return {"model_version": "unknown", "status": "unavailable"}
 
@@ -795,7 +814,7 @@ async def run_verification_pipeline(
     ocr_score, ocr_reasons = calc_ocr_consistency_score(ocr_text or "")
     metadata_score, metadata_reasons = calc_metadata_tamper_score(image_bytes)
     template_score, template_reasons = calc_template_rule_score(ocr_text or "")
-    external_score, external_reasons = call_external_verifier(request_hash)
+    external_score, external_reasons = await call_external_verifier(request_hash)
 
     detectors = [
         DetectorScore(
@@ -1054,9 +1073,8 @@ def get_job_status(
     row = db.get_job(job_id)
     if not row:
         raise HTTPException(status_code=404, detail="Job not found.")
-    if claims.get("sub", "unknown") != row["submitted_by"] and ROLE_ADMIN not in claims.get("roles", []):
-        if ROLE_AUDITOR not in claims.get("roles", []):
-            raise HTTPException(status_code=403, detail="Not allowed to view this job.")
+    if not can_view_job(claims, row):
+        raise HTTPException(status_code=403, detail="Not allowed to view this job.")
     result = VerificationResponse(**json.loads(row["result_json"])) if row["result_json"] else None
     return VerificationJobStatus(
         job_id=row["job_id"],

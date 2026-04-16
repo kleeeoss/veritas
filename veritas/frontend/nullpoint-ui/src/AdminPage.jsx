@@ -145,8 +145,8 @@ function AdminPage() {
                 <div style={{ marginTop: '1rem', textAlign: 'left' }}>
                   <h4>Decision History</h4>
                   <ul>
-                    {historyByReview[item.id].map((entry) => (
-                      <li key={`${item.id}-${entry.created_at}-${entry.action}`}>
+                    {historyByReview[item.id].map((entry, index) => (
+                      <li key={`${item.id}-${entry.created_at}-${entry.action}-${index}`}>
                         {entry.created_at} — {entry.action} by {entry.actor} {entry.notes ? `(${entry.notes})` : ''}
                       </li>
                     ))}
