@@ -1,5 +1,7 @@
-// In src/AdminPage.jsx
 import React, { useState, useEffect } from 'react';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8002';
+const API_TOKEN = import.meta.env.VITE_VERITAS_BEARER_TOKEN || '';
 
 function AdminPage() {
   const [reviews, setReviews] = useState([]);
@@ -9,13 +11,17 @@ function AdminPage() {
   // Function to fetch the list of documents for review
   const fetchReviews = async () => {
     try {
-      const response = await fetch('http://localhost:8002/admin/reviews');
+      const response = await fetch(`${API_BASE}/api/v1/admin/reviews`, {
+        headers: {
+          ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        },
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch reviews.');
       }
       const data = await response.json();
       setReviews(data);
-    } catch (err) {
+    } catch (_err) {
       setError('Could not load review data.');
     } finally {
       setIsLoading(false);
@@ -30,14 +36,17 @@ function AdminPage() {
   // Function to handle the "Approve" or "Reject" action
   const handleDecision = async (reviewId, decision) => {
     try {
-      await fetch(`http://localhost:8002/admin/reviews/${reviewId}`, {
+      await fetch(`${API_BASE}/api/v1/admin/reviews/${reviewId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        },
         body: JSON.stringify({ decision }),
       });
       // Remove the item from the list in the UI for instant feedback
       setReviews(currentReviews => currentReviews.filter(item => item.id !== reviewId));
-    } catch (err) {
+    } catch (_err) {
       alert('Failed to process decision.');
     }
   };

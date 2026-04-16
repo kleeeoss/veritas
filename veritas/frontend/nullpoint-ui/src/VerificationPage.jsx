@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8002';
+const API_TOKEN = import.meta.env.VITE_VERITAS_BEARER_TOKEN || '';
+
 function VerificationPage() {
   // State to hold the selected file and its preview URL
   const [selectedFile, setSelectedFile] = useState(null);
@@ -37,13 +40,16 @@ function VerificationPage() {
     formData.append('file', selectedFile);
 
     try {
-      // Replace with your actual backend endpoint
-      const response = await fetch('http://localhost:8002/veritas/verify', {
+      const response = await fetch(`${API_BASE}/api/v1/veritas/verify`, {
         method: 'POST',
+        headers: {
+          ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+          'Idempotency-Key': crypto.randomUUID(),
+        },
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Server responded with an error.');
+      if (!response.ok) throw new Error(`Server responded with ${response.status}.`);
 
       const data = await response.json();
       setAnalysisResult(data); // Store the full API response in state
@@ -85,27 +91,25 @@ function VerificationPage() {
           <div className="results-section">
             <h2>Analysis Result</h2>
             <p><strong>Forgery Score:</strong> {analysisResult.forgery_score.toFixed(4)}</p>
+            <p><strong>Risk Level:</strong> {analysisResult.risk_level}</p>
             {needsReview && <p className="review-status">Status: Needs Manual Review</p>}
 
-            {/* FIX: The Layered Image Display */}
-<div className="image-container" style={{ aspectRatio: '11/8.5' }}>
-  <img src={imagePreviewUrl} alt="Uploaded Certificate" className="base-image" />
-  {analysisResult && analysisResult.heatmap && (
-    <img
-      // This is the only line that changes: png -> jpeg
-      src={`data:image/jpeg;base64,${analysisResult.heatmap}`}
-      alt="Forgery Heatmap"
-      className="heatmap-overlay"
-    />
-  )}
-</div>
+            <div className="image-container" style={{ aspectRatio: '11/8.5' }}>
+              <img src={imagePreviewUrl} alt="Uploaded Certificate" className="base-image" />
+              {analysisResult && analysisResult.heatmap && (
+                <img
+                  src={`data:image/jpeg;base64,${analysisResult.heatmap}`}
+                  alt="Forgery Heatmap"
+                  className="heatmap-overlay"
+                />
+              )}
+            </div>
 
             <p><strong>Extracted Text (OCR):</strong></p>
             <pre className="ocr-text-box">
               {JSON.stringify(analysisResult.ocr_text, null, 2)}
             </pre>
 
-            {/* FIX 2: The Conditionally Disabled Button */}
             <button className="issue-button" disabled={!isGenuine}>
               Issue Signed Certificate
             </button>

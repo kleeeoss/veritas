@@ -1,23 +1,30 @@
-// In src/App.jsx
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import React, { useState } from 'react';
 import VerificationPage from './VerificationPage';
 import AdminPage from './AdminPage';
 
 function App() {
+  const [activePage, setActivePage] = useState('verification');
+
   return (
-    // 👇 APPLY THE CENTERING CLASS HERE
     <div className="App-container">
       <nav style={{ padding: '1rem', backgroundColor: '#282c34', width: '100%' }}>
-        <Link to="/" style={{ color: 'white', marginRight: '20px' }}>Verification</Link>
-        <Link to="/admin" style={{ color: 'white' }}>Admin Review</Link>
+        <button
+          type="button"
+          onClick={() => setActivePage('verification')}
+          style={{ color: 'white', marginRight: '20px', background: 'transparent', border: '1px solid #fff' }}
+        >
+          Verification
+        </button>
+        <button
+          type="button"
+          onClick={() => setActivePage('admin')}
+          style={{ color: 'white', background: 'transparent', border: '1px solid #fff' }}
+        >
+          Admin Review
+        </button>
       </nav>
 
-      {/* The rest of your content will now be centered */}
-      <Routes>
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/" element={<VerificationPage />} />
-      </Routes>
+      {activePage === 'admin' ? <AdminPage /> : <VerificationPage />}
     </div>
   );
 }

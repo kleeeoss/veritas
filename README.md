@@ -100,6 +100,16 @@ This will start at least two services:
 
 After the services are up you can interact with the API endpoints or connect the frontend application to them.
 
+### API Notes (Current)
+
+- Health: `GET /health`
+- Readiness: `GET /ready`
+- Verify (v1): `POST /api/v1/veritas/verify`
+- Review Queue (v1): `GET /api/v1/admin/reviews`
+- Review Decision (v1): `POST /api/v1/admin/reviews/{review_id}`
+
+Most v1 endpoints require a Bearer JWT with `roles` claim (for example: `verifier`, `reviewer`, `admin`, `auditor`).
+
 ### 3. (Optional) Re-train the Model
 
 To retrain the forgery detection model with new data:
