@@ -2,10 +2,10 @@
 
 import io
 import base64
+import os
 import numpy as np
 import cv2
 from PIL import Image
-import random  # NEW: Import the random library
 
 import torch
 import torch.nn as nn
@@ -26,6 +26,7 @@ num_ftrs = model.fc.in_features
 model.fc = nn.Linear(num_ftrs, 1)
 
 MODEL_PATH = "/app/models/v1/model_v1.pt"
+MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 try:
     model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
     print("✅ Custom forgery detection model loaded successfully.")
@@ -71,37 +72,19 @@ def generate_heatmap(model, input_tensor, original_image):
     return superimposed_img
 
 
-# --- 5. Prediction Endpoint (WITH DEMO MODE ADDED) ---
+@app.get("/metadata")
+def metadata():
+    return {
+        "model_version": MODEL_VERSION,
+        "model_path": MODEL_PATH,
+        "status": "loaded",
+        "architecture": "resnet18-binary",
+    }
+
+
+# --- 5. Prediction Endpoint ---
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # --- NEW: DEMO MODE LOGIC ---
-    # Check if the filename indicates it's one of your special test images.
-    if "ambiguous_forgery" in file.filename:
-        print(f"Intercepting '{file.filename}' for demo mode.")
-
-        # Generate a unique, random score in the desired range
-        forgery_score = random.uniform(0.45, 0.55)
-
-        # Read the image to create a placeholder heatmap
-        contents = await file.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
-        original_cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-
-        # Create a simple, fake heatmap (a subtle blue overlay)
-        fake_heatmap = np.zeros_like(original_cv_image)
-        fake_heatmap[:, :, 0] = 150  # Add blue channel intensity
-        superimposed_img = cv2.addWeighted(original_cv_image, 0.8, fake_heatmap, 0.2, 0)
-
-        _, buffer = cv2.imencode('.jpg', superimposed_img)
-        heatmap_base64 = base64.b64encode(buffer).decode('utf-8')
-
-        return {
-            "forgery_score": forgery_score,
-            "heatmap": heatmap_base64
-        }
-
-    # --- REGULAR LOGIC (UNCHANGED) ---
-    # If it's not a demo image, run the normal process.
     contents = await file.read()
     pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
 
@@ -119,5 +102,6 @@ async def predict(file: UploadFile = File(...)):
 
     return {
         "forgery_score": forgery_score,
-        "heatmap": heatmap_base64
+        "heatmap": heatmap_base64,
+        "model_version": MODEL_VERSION,
     }
