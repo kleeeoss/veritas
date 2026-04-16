@@ -21,7 +21,7 @@ function AdminPage() {
       }
       const data = await response.json();
       setReviews(data);
-    } catch (_err) {
+    } catch {
       setError('Could not load review data.');
     } finally {
       setIsLoading(false);
@@ -46,7 +46,7 @@ function AdminPage() {
       });
       // Remove the item from the list in the UI for instant feedback
       setReviews(currentReviews => currentReviews.filter(item => item.id !== reviewId));
-    } catch (_err) {
+    } catch {
       alert('Failed to process decision.');
     }
   };

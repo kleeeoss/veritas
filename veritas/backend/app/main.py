@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 import requests
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from veritas.ml.ocr_pipeline import extract_text_from_image
 
@@ -293,7 +293,7 @@ class ReviewItem(BaseModel):
 
 
 class ReviewDecision(BaseModel):
-    decision: str = Field(regex="^(approve|reject)$")
+    decision: str
 
 
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
@@ -325,6 +325,12 @@ def save_review_artifact(review_id: str, payload: bytes, ext: str) -> str:
     artifact_path = review_dir / f"{review_id}.{ext}"
     artifact_path.write_bytes(payload)
     return str(artifact_path)
+
+
+def model_to_dict(model: BaseModel) -> Dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
 
 @app.get("/health", response_model=HealthCheck)
@@ -408,7 +414,7 @@ async def verify_document(
     )
 
     if idempotency_key:
-        db.set_idempotent(idempotency_key, request_hash, payload.dict())
+        db.set_idempotent(idempotency_key, request_hash, model_to_dict(payload))
     db.append_audit_event(
         actor=claims.get("sub", "unknown"),
         event_type="verification_completed",
@@ -446,6 +452,8 @@ def process_review(
     decision: ReviewDecision,
     claims: Dict[str, Any] = Depends(require_roles({ROLE_REVIEWER, ROLE_ADMIN})),
 ) -> None:
+    if decision.decision not in {"approve", "reject"}:
+        raise HTTPException(status_code=422, detail="Decision must be 'approve' or 'reject'.")
     updated = db.resolve_review(review_id=review_id, decision=decision.decision)
     if not updated:
         raise HTTPException(status_code=404, detail="Review item not found.")

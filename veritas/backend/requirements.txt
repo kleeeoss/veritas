@@ -6,3 +6,4 @@ cryptography
 qrcode
 Pillow
 pytesseract
+httpx
