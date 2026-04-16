@@ -7,7 +7,7 @@ const POLL_INTERVAL_MS = 1000;
 
 const isValidBase64 = (value) => {
   if (!value || typeof value !== 'string') return false;
-  if (!/^[A-Za-z0-9+/=]+$/.test(value)) return false;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return false;
   try {
     const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
     atob(padded);

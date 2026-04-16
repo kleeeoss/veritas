@@ -146,7 +146,7 @@ function AdminPage() {
                   <h4>Decision History</h4>
                   <ul>
                     {historyByReview[item.id].map((entry, index) => (
-                      <li key={`${item.id}-${entry.created_at}-${entry.action}-${index}`}>
+                      <li key={`${item.id}-history-${index}`}>
                         {entry.created_at} — {entry.action} by {entry.actor} {entry.notes ? `(${entry.notes})` : ''}
                       </li>
                     ))}

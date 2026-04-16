@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -672,7 +673,7 @@ def calc_ocr_consistency_score(text: str) -> Tuple[float, List[str]]:
 
 def calc_metadata_tamper_score(image_bytes: bytes) -> Tuple[float, List[str]]:
     try:
-        im = Image.open(io_from_bytes(image_bytes))
+        im = Image.open(io.BytesIO(image_bytes))
         w, h = im.size
         score = 0.15
         reasons: List[str] = []
@@ -692,12 +693,6 @@ def calc_metadata_tamper_score(image_bytes: bytes) -> Tuple[float, List[str]]:
         return min(score, 1.0), reasons
     except Exception:
         return 0.6, ["METADATA_PARSE_ERROR"]
-
-
-def io_from_bytes(data: bytes):
-    from io import BytesIO
-
-    return BytesIO(data)
 
 
 def calc_template_rule_score(text: str) -> Tuple[float, List[str]]:
