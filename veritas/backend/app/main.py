@@ -111,7 +111,7 @@ def require_roles(required_roles: Set[str]):
 def _detect_magic_type(data: bytes) -> Optional[str]:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
+    if len(data) >= 4 and data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
     return None
 
@@ -123,7 +123,7 @@ def validate_upload(file: UploadFile, payload: bytes) -> None:
         raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {MAX_UPLOAD_BYTES} bytes.")
 
     # Quick high-risk signature rejection first.
-    banned_signatures = [b"MZ", b"\x7fELF", b"%PDF", b"PK\x03\x04"]
+    banned_signatures = [b"MZ", b"\x7fELF", b"%PDF", b"#!", b"<!DOCTYPE html", b"<html"]
     if any(payload.startswith(sig) for sig in banned_signatures):
         raise HTTPException(status_code=400, detail="Potentially unsafe file signature detected.")
 
@@ -339,7 +339,8 @@ def get_readiness() -> ReadinessCheck:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("SELECT 1")
         db_state = "ok"
-    except Exception:
+    except Exception as exc:
+        logger.exception("Readiness check failed for database: %s", exc)
         db_state = "error"
     storage_state = "ok" if ARTIFACT_DIR.exists() and os.access(ARTIFACT_DIR, os.W_OK) else "error"
     if db_state != "ok" or storage_state != "ok":
@@ -419,7 +420,9 @@ async def verify_document(
 
 
 @app.get("/api/v1/admin/reviews", response_model=List[ReviewItem])
-def get_reviews(claims: Dict[str, Any] = Depends(require_roles({ROLE_REVIEWER, ROLE_ADMIN, ROLE_AUDITOR}))) -> List[ReviewItem]:
+def get_reviews(
+    claims: Dict[str, Any] = Depends(require_roles({ROLE_REVIEWER, ROLE_ADMIN, ROLE_AUDITOR})),
+) -> List[ReviewItem]:
     rows = db.list_pending_reviews()
     reviews: List[ReviewItem] = []
     for row in rows:
