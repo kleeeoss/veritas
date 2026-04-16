@@ -23,6 +23,10 @@ services:
       - "8002:8000"
     environment:
       - PYTHONPATH=/app
+      - MODEL_RETRIES=2
+      - MODEL_CB_FAIL_THRESHOLD=3
+      - MODEL_CB_OPEN_SECONDS=20
+      - VERITAS_ARTIFACT_DIR=/app/artifacts/reviews
     depends_on:
       - veritas-model-server
     volumes:
@@ -30,4 +34,5 @@ services:
       - ./veritas/backend/app:/app/app
       - ./tools:/app/tools
       - ./data/reviews:/app/reviews
+      - ./data/artifacts:/app/artifacts
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

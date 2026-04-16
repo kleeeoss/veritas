@@ -13,6 +13,7 @@ function VerificationPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState('');
+  const [jobStatus, setJobStatus] = useState('');
 
   const safeHeatmap = analysisResult?.heatmap && /^[A-Za-z0-9+/=]+$/.test(analysisResult.heatmap)
     ? analysisResult.heatmap
@@ -46,7 +47,8 @@ function VerificationPage() {
     formData.append('file', selectedFile);
 
     try {
-      const response = await fetch(`${API_BASE}/api/v1/veritas/verify`, {
+      setJobStatus('Submitting async verification job...');
+      const response = await fetch(`${API_BASE}/api/v1/veritas/verify-async`, {
         method: 'POST',
         headers: {
           ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
@@ -56,9 +58,34 @@ function VerificationPage() {
       });
 
       if (!response.ok) throw new Error(`Server responded with ${response.status}.`);
+      const job = await response.json();
+      setJobStatus(`Job queued: ${job.job_id}`);
 
-      const data = await response.json();
-      setAnalysisResult(data); // Store the full API response in state
+      let pollCount = 0;
+      let done = false;
+      while (!done && pollCount < 90) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        pollCount += 1;
+        const jobRes = await fetch(`${API_BASE}/api/v1/veritas/jobs/${job.job_id}`, {
+          headers: {
+            ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+          },
+        });
+        if (!jobRes.ok) throw new Error(`Job status failed with ${jobRes.status}`);
+        const statusPayload = await jobRes.json();
+        setJobStatus(`Job status: ${statusPayload.status}`);
+        if (statusPayload.status === 'completed') {
+          done = true;
+          setAnalysisResult(statusPayload.result);
+          setJobStatus('Completed');
+        } else if (statusPayload.status === 'failed') {
+          done = true;
+          throw new Error(statusPayload.error || 'Async job failed.');
+        }
+      }
+      if (!done) {
+        throw new Error('Verification job timed out while polling.');
+      }
 
     } catch (err) {
       setError('Failed to get analysis. Please try again.');
@@ -89,6 +116,7 @@ function VerificationPage() {
 
         {/* Display loading or error messages */}
         {isLoading && <p>Loading...</p>}
+        {!isLoading && jobStatus && <p>{jobStatus}</p>}
         {error && <p className="error-message">{error}</p>}
 
         {/* --- Results Section --- */}
@@ -98,6 +126,7 @@ function VerificationPage() {
             <h2>Analysis Result</h2>
             <p><strong>Forgery Score:</strong> {analysisResult.forgery_score.toFixed(4)}</p>
             <p><strong>Risk Level:</strong> {analysisResult.risk_level}</p>
+            <p><strong>Model Version:</strong> {analysisResult.model_version}</p>
             {needsReview && <p className="review-status">Status: Needs Manual Review</p>}
 
             <div className="image-container" style={{ aspectRatio: '11/8.5' }}>
@@ -115,6 +144,15 @@ function VerificationPage() {
             <pre className="ocr-text-box">
               {JSON.stringify(analysisResult.ocr_text, null, 2)}
             </pre>
+            <p><strong>Reason Codes:</strong> {analysisResult.reason_codes.join(', ')}</p>
+            <h3>Detector Breakdown</h3>
+            <ul>
+              {analysisResult.detectors.map((detector) => (
+                <li key={detector.detector}>
+                  <strong>{detector.detector}</strong> ({detector.version}) — score: {detector.forgery_score.toFixed(3)}
+                </li>
+              ))}
+            </ul>
 
             <button className="issue-button" disabled={!isGenuine}>
               Issue Signed Certificate

@@ -104,11 +104,22 @@ After the services are up you can interact with the API endpoints or connect the
 
 - Health: `GET /health`
 - Readiness: `GET /ready`
+- Metrics (admin/auditor): `GET /metrics`
 - Verify (v1): `POST /api/v1/veritas/verify`
+- Verify Async (v1): `POST /api/v1/veritas/verify-async`
+- Job Status (v1): `GET /api/v1/veritas/jobs/{job_id}`
 - Review Queue (v1): `GET /api/v1/admin/reviews`
+- Start Review (v1): `POST /api/v1/admin/reviews/{review_id}/start`
+- Escalate Review (v1): `POST /api/v1/admin/reviews/{review_id}/escalate`
+- Review History (v1): `GET /api/v1/admin/reviews/{review_id}/history`
 - Review Decision (v1): `POST /api/v1/admin/reviews/{review_id}`
+- Models Registry (v1): `GET /api/v1/models`
+- Activate Model (v1): `POST /api/v1/models/{model_version}/activate`
+- Drift Summary (v1): `GET /api/v1/models/drift-summary`
 
 Most v1 endpoints require a Bearer JWT with `roles` claim (for example: `verifier`, `reviewer`, `admin`, `auditor`).
+
+The verification pipeline now combines multiple detector engines (ML + OCR consistency + metadata/tamper checks + template rules + optional external verifier), returning detector-level scores, reason codes, and calibrated risk level.
 
 ### 3. (Optional) Re-train the Model
 

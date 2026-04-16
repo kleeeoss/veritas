@@ -7,9 +7,11 @@ import os
 import tempfile
 import time
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 
 def _b64url(data: bytes) -> str:
@@ -31,6 +33,13 @@ def create_jwt(secret: str, roles: list[str], sub: str = "test-user") -> str:
     return f"{header_b64}.{payload_b64}.{_b64url(sig)}"
 
 
+def make_test_jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    image = Image.new("RGB", (800, 600), color=(200, 200, 200))
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
 class TestApiSecurity(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -46,6 +55,7 @@ class TestApiSecurity(unittest.TestCase):
         self.client = TestClient(self.main.app)
         self.verifier_token = create_jwt("test-secret", ["verifier"])
         self.reviewer_token = create_jwt("test-secret", ["reviewer"])
+        self.admin_token = create_jwt("test-secret", ["admin"])
 
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
@@ -81,7 +91,7 @@ class TestApiSecurity(unittest.TestCase):
             "Authorization": f"Bearer {self.verifier_token}",
             "Idempotency-Key": "idem-key-1",
         }
-        fake_payload = {"forgery_score": 0.51, "heatmap": "abc=="}
+        fake_payload = {"forgery_score": 0.51, "heatmap": "abc==", "model_version": "v1"}
 
         with patch("app.main.extract_text_from_image", return_value="ocr-text"), patch(
             "app.main.requests.post"
@@ -89,7 +99,7 @@ class TestApiSecurity(unittest.TestCase):
             mocked_post.return_value.raise_for_status.return_value = None
             mocked_post.return_value.json.return_value = fake_payload
 
-            body = {"file": ("doc.jpg", b"\xff\xd8\xff\x00\x11", "image/jpeg")}
+            body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
             first = self.client.post("/api/v1/veritas/verify", headers=headers, files=body)
             second = self.client.post("/api/v1/veritas/verify", headers=headers, files=body)
 
@@ -97,11 +107,72 @@ class TestApiSecurity(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.json(), second.json())
         self.assertEqual(mocked_post.call_count, 1)
+        self.assertIn("detectors", first.json())
+        self.assertIn("risk_level", first.json())
 
     def test_reviewer_can_access_reviews(self) -> None:
         headers = {"Authorization": f"Bearer {self.reviewer_token}"}
         res = self.client.get("/api/v1/admin/reviews", headers=headers)
         self.assertEqual(res.status_code, 200)
+
+    def test_async_job_completes(self) -> None:
+        headers = {"Authorization": f"Bearer {self.verifier_token}", "Idempotency-Key": "job-1"}
+        fake_payload = {"forgery_score": 0.2, "heatmap": "abc==", "model_version": "v1"}
+        body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
+        with patch("app.main.extract_text_from_image", return_value="Certificate issued on 21/01/2026 for name"), patch(
+            "app.main.requests.post"
+        ) as mocked_post:
+            mocked_post.return_value.raise_for_status.return_value = None
+            mocked_post.return_value.json.return_value = fake_payload
+            queued = self.client.post("/api/v1/veritas/verify-async", headers=headers, files=body)
+            self.assertEqual(queued.status_code, 202)
+            job_id = queued.json()["job_id"]
+            import asyncio
+
+            asyncio.run(self.main.process_queued_job(job_id))
+            for _ in range(10):
+                status_res = self.client.get(
+                    f"/api/v1/veritas/jobs/{job_id}", headers={"Authorization": f"Bearer {self.verifier_token}"}
+                )
+                self.assertEqual(status_res.status_code, 200)
+                if status_res.json()["status"] == "completed":
+                    self.assertIn("result", status_res.json())
+                    return
+                time.sleep(0.1)
+            self.fail("Async job did not complete in time")
+
+    def test_review_escalation_and_history(self) -> None:
+        verifier_headers = {"Authorization": f"Bearer {self.verifier_token}"}
+        reviewer_headers = {"Authorization": f"Bearer {self.reviewer_token}"}
+        fake_payload = {"forgery_score": 0.5, "heatmap": "abc==", "model_version": "v1"}
+        body = {"file": ("doc.jpg", make_test_jpeg_bytes(), "image/jpeg")}
+        with patch("app.main.extract_text_from_image", return_value="random text"), patch("app.main.requests.post") as mocked_post:
+            mocked_post.return_value.raise_for_status.return_value = None
+            mocked_post.return_value.json.return_value = fake_payload
+            verify = self.client.post("/api/v1/veritas/verify", headers=verifier_headers, files=body)
+            self.assertEqual(verify.status_code, 200)
+
+        reviews = self.client.get("/api/v1/admin/reviews", headers=reviewer_headers).json()
+        self.assertGreaterEqual(len(reviews), 1)
+        review_id = reviews[0]["id"]
+
+        esc = self.client.post(
+            f"/api/v1/admin/reviews/{review_id}/escalate",
+            headers={**reviewer_headers, "Content-Type": "application/json"},
+            json={"reason": "Needs auditor decision"},
+        )
+        self.assertEqual(esc.status_code, 204)
+
+        history = self.client.get(f"/api/v1/admin/reviews/{review_id}/history", headers=reviewer_headers)
+        self.assertEqual(history.status_code, 200)
+        actions = [item["action"] for item in history.json()]
+        self.assertIn("escalated", actions)
+
+    def test_models_endpoint_admin_only(self) -> None:
+        forbidden = self.client.get("/api/v1/models", headers={"Authorization": f"Bearer {self.verifier_token}"})
+        self.assertEqual(forbidden.status_code, 403)
+        allowed = self.client.get("/api/v1/models", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(allowed.status_code, 200)
 
 
 if __name__ == "__main__":

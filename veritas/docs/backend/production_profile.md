@@ -14,6 +14,10 @@
 - Artifact storage abstraction using filesystem-backed object path.
 - Tamper-evident audit event chain with HMAC signatures.
 - Health and readiness probes (`/health`, `/ready`).
+- Async verification orchestration (`/api/v1/veritas/verify-async` + job status endpoint).
+- Multi-engine detector outputs with versioned reason codes for traceability.
+- Review escalation and history endpoints for auditor workflows.
+- Model registry + activation + drift-summary APIs for lifecycle governance.
 
 ## Runtime configuration
 - `VERITAS_JWT_SECRET`: HS256 verification key.

@@ -2,6 +2,7 @@
 
 import io
 import base64
+import os
 import numpy as np
 import cv2
 from PIL import Image
@@ -25,6 +26,7 @@ num_ftrs = model.fc.in_features
 model.fc = nn.Linear(num_ftrs, 1)
 
 MODEL_PATH = "/app/models/v1/model_v1.pt"
+MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 try:
     model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
     print("✅ Custom forgery detection model loaded successfully.")
@@ -70,6 +72,16 @@ def generate_heatmap(model, input_tensor, original_image):
     return superimposed_img
 
 
+@app.get("/metadata")
+def metadata():
+    return {
+        "model_version": MODEL_VERSION,
+        "model_path": MODEL_PATH,
+        "status": "loaded",
+        "architecture": "resnet18-binary",
+    }
+
+
 # --- 5. Prediction Endpoint ---
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -90,5 +102,6 @@ async def predict(file: UploadFile = File(...)):
 
     return {
         "forgery_score": forgery_score,
-        "heatmap": heatmap_base64
+        "heatmap": heatmap_base64,
+        "model_version": MODEL_VERSION,
     }
