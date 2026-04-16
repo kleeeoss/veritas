@@ -12,6 +12,11 @@ function VerificationPage() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [idempotencyKey, setIdempotencyKey] = useState('');
+
+  const safeHeatmap = analysisResult?.heatmap && /^[A-Za-z0-9+/=]+$/.test(analysisResult.heatmap)
+    ? analysisResult.heatmap
+    : null;
 
   // This function is triggered when a user selects a file
   const handleFileChange = (event) => {
@@ -22,6 +27,7 @@ function VerificationPage() {
       // Reset previous results when a new file is selected
       setAnalysisResult(null);
       setError('');
+      setIdempotencyKey(crypto.randomUUID());
     }
   };
 
@@ -44,7 +50,7 @@ function VerificationPage() {
         method: 'POST',
         headers: {
           ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
-          'Idempotency-Key': crypto.randomUUID(),
+          'Idempotency-Key': idempotencyKey || crypto.randomUUID(),
         },
         body: formData,
       });
@@ -96,9 +102,9 @@ function VerificationPage() {
 
             <div className="image-container" style={{ aspectRatio: '11/8.5' }}>
               <img src={imagePreviewUrl} alt="Uploaded Certificate" className="base-image" />
-              {analysisResult && analysisResult.heatmap && (
+              {safeHeatmap && (
                 <img
-                  src={`data:image/jpeg;base64,${analysisResult.heatmap}`}
+                  src={`data:image/jpeg;base64,${safeHeatmap}`}
                   alt="Forgery Heatmap"
                   className="heatmap-overlay"
                 />

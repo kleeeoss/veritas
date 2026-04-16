@@ -121,17 +121,18 @@ def validate_upload(file: UploadFile, payload: bytes) -> None:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if len(payload) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {MAX_UPLOAD_BYTES} bytes.")
+
+    # Quick high-risk signature rejection first.
+    banned_signatures = [b"MZ", b"\x7fELF", b"%PDF", b"PK\x03\x04"]
+    if any(payload.startswith(sig) for sig in banned_signatures):
+        raise HTTPException(status_code=400, detail="Potentially unsafe file signature detected.")
+
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=415, detail="Unsupported content type.")
 
     detected = _detect_magic_type(payload)
     if detected != file.content_type:
         raise HTTPException(status_code=415, detail="File signature does not match declared content type.")
-
-    # Simple high-risk signature rejection to reduce accidental binary uploads.
-    banned_signatures = [b"MZ", b"\x7fELF", b"%PDF", b"PK\x03\x04"]
-    if any(payload.startswith(sig) for sig in banned_signatures):
-        raise HTTPException(status_code=400, detail="Potentially unsafe file signature detected.")
 
 
 class Database:
@@ -327,12 +328,6 @@ def save_review_artifact(review_id: str, payload: bytes, ext: str) -> str:
     return str(artifact_path)
 
 
-def model_to_dict(model: BaseModel) -> Dict[str, Any]:
-    if hasattr(model, "model_dump"):
-        return model.model_dump()
-    return model.dict()
-
-
 @app.get("/health", response_model=HealthCheck)
 def get_health() -> HealthCheck:
     return HealthCheck(status="OK", version=APP_VERSION)
@@ -414,7 +409,7 @@ async def verify_document(
     )
 
     if idempotency_key:
-        db.set_idempotent(idempotency_key, request_hash, model_to_dict(payload))
+        db.set_idempotent(idempotency_key, request_hash, payload.model_dump())
     db.append_audit_event(
         actor=claims.get("sub", "unknown"),
         event_type="verification_completed",
