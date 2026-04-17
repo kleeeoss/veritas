@@ -129,9 +129,8 @@ Health check:
 curl http://localhost:8000/health
 ```
 
-### 6) Start Next.js Frontend (Companion App)
-This repository currently does **not** include a frontend directory.  
-If you have the companion Next.js client, start it with:
+### 6) Future Next.js Frontend Startup (Companion App)
+This repository currently does **not** include a frontend directory. The commands below are for the companion Next.js client when it is available:
 ```bash
 cd /path/to/frontend
 npm install
