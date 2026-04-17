@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -54,6 +54,37 @@ class ForensicReportResponse(BaseModel):
     trust_score: float | None
     summary: dict[str, Any] | None
     report_created_at: datetime
+
+
+class VerificationJobListItem(BaseModel):
+    job_id: str
+    original_filename: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class VerificationJobListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[VerificationJobListItem]
+
+
+class ForensicReportListItem(BaseModel):
+    job_id: str
+    original_filename: str
+    status: str
+    trust_score: float | None
+    report_created_at: datetime
+    summary: dict[str, Any] | None
+
+
+class ForensicReportListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[ForensicReportListItem]
 
 
 upload_dir = Path(os.getenv("UPLOAD_DIR", "./uploads"))
@@ -174,6 +205,47 @@ def run_verification(
     )
 
 
+@app.get("/api/verify/jobs", response_model=VerificationJobListResponse)
+def list_verification_jobs(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> VerificationJobListResponse:
+    if status is not None:
+        valid_statuses = {value.value for value in VerificationStatus}
+        if status not in valid_statuses:
+            raise HTTPException(status_code=400, detail="Invalid status filter.")
+
+    query = db.query(VerificationJob)
+    if status is not None:
+        query = query.filter(VerificationJob.status == status)
+
+    total = query.count()
+    jobs = (
+        query.order_by(VerificationJob.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return VerificationJobListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=[
+            VerificationJobListItem(
+                job_id=job.id,
+                original_filename=job.original_filename,
+                status=job.status,
+                created_at=job.created_at,
+                updated_at=job.updated_at,
+            )
+            for job in jobs
+        ],
+    )
+
+
 @app.get("/api/verify/{job_id}", response_model=VerificationStatusResponse)
 def get_verification_status(
     job_id: str,
@@ -211,4 +283,39 @@ def get_forensic_report(
         trust_score=report.integrity_score,
         summary=json.loads(report.summary_json) if report.summary_json else None,
         report_created_at=report.created_at,
+    )
+
+
+@app.get("/api/reports", response_model=ForensicReportListResponse)
+def list_forensic_reports(
+    include_summary: bool = Query(default=False),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ForensicReportListResponse:
+    total = db.query(ForensicReport).count()
+    rows = (
+        db.query(ForensicReport, VerificationJob)
+        .join(VerificationJob, ForensicReport.job_id == VerificationJob.id)
+        .order_by(ForensicReport.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return ForensicReportListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=[
+            ForensicReportListItem(
+                job_id=report.job_id,
+                original_filename=job.original_filename,
+                status=job.status,
+                trust_score=report.integrity_score,
+                report_created_at=report.created_at,
+                summary=json.loads(report.summary_json) if include_summary and report.summary_json else None,
+            )
+            for report, job in rows
+        ],
     )

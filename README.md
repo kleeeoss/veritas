@@ -1,6 +1,6 @@
 # Project Veritas (Rebuild)
 
-Phase 1, Phase 2, Phase 3, and Phase 4 scaffold completed:
+Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 scaffold completed:
 
 - Clean-slate repository reset
 - FastAPI backend initialized
@@ -19,6 +19,9 @@ Phase 1, Phase 2, Phase 3, and Phase 4 scaffold completed:
 - Phase 4 read APIs added:
   - `GET /api/verify/{job_id}` (job status)
   - `GET /api/verify/{job_id}/report` (forensic report)
+- Phase 5 listing APIs added:
+  - `GET /api/verify/jobs` (job history with pagination/filtering)
+  - `GET /api/reports` (forensic report history with pagination)
 
 ## Run locally
 
