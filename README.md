@@ -1,6 +1,6 @@
 # Project Veritas (Rebuild)
 
-Phase 1 scaffold completed:
+Phase 1 and Phase 2 scaffold completed:
 
 - Clean-slate repository reset
 - FastAPI backend initialized
@@ -9,6 +9,10 @@ Phase 1 scaffold completed:
   - `ForensicReport`
 - Upload endpoint added:
   - `POST /api/verify/upload` (multipart file upload, local save, mock S3 metadata)
+- Forensics pipeline module added with placeholder engines:
+  - `analyze_ela(image_path)`
+  - `analyze_metadata(file_path)`
+  - `verify_signature_siamese(image_path)`
 
 ## Run locally
 
