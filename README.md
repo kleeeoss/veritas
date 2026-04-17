@@ -1,4 +1,4 @@
-# Veritas SIH 2025
+# Veritas
 
 AI-powered document authenticity verification platform for forged/tampered certificate detection.
 
