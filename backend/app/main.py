@@ -4,6 +4,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -36,6 +37,22 @@ class VerificationRunResponse(BaseModel):
     status: str
     trust_score: float
     passed: bool
+    report_created_at: datetime
+
+
+class VerificationStatusResponse(BaseModel):
+    job_id: str
+    original_filename: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ForensicReportResponse(BaseModel):
+    job_id: str
+    status: str
+    trust_score: float | None
+    summary: dict[str, Any] | None
     report_created_at: datetime
 
 
@@ -153,5 +170,45 @@ def run_verification(
         status=job.status,
         trust_score=aggregation["trust_score"],
         passed=aggregation["passed"],
+        report_created_at=report.created_at,
+    )
+
+
+@app.get("/api/verify/{job_id}", response_model=VerificationStatusResponse)
+def get_verification_status(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> VerificationStatusResponse:
+    job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Verification job not found.")
+
+    return VerificationStatusResponse(
+        job_id=job.id,
+        original_filename=job.original_filename,
+        status=job.status,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
+@app.get("/api/verify/{job_id}/report", response_model=ForensicReportResponse)
+def get_forensic_report(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> ForensicReportResponse:
+    job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Verification job not found.")
+
+    report = db.query(ForensicReport).filter(ForensicReport.job_id == job.id).first()
+    if report is None:
+        raise HTTPException(status_code=404, detail="Forensic report not found.")
+
+    return ForensicReportResponse(
+        job_id=job.id,
+        status=job.status,
+        trust_score=report.integrity_score,
+        summary=json.loads(report.summary_json) if report.summary_json else None,
         report_created_at=report.created_at,
     )
