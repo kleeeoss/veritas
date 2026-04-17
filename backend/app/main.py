@@ -208,7 +208,7 @@ def run_verification(
 @app.get("/api/verify/jobs", response_model=VerificationJobListResponse)
 def list_verification_jobs(
     status: str | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> VerificationJobListResponse:
@@ -289,7 +289,7 @@ def get_forensic_report(
 @app.get("/api/reports", response_model=ForensicReportListResponse)
 def list_forensic_reports(
     include_summary: bool = Query(default=False),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> ForensicReportListResponse:
@@ -303,19 +303,25 @@ def list_forensic_reports(
         .all()
     )
 
-    return ForensicReportListResponse(
-        total=total,
-        limit=limit,
-        offset=offset,
-        items=[
+    items: list[ForensicReportListItem] = []
+    for report, job in rows:
+        summary: dict[str, Any] | None = None
+        if include_summary and report.summary_json:
+            summary = json.loads(report.summary_json)
+        items.append(
             ForensicReportListItem(
                 job_id=report.job_id,
                 original_filename=job.original_filename,
                 status=job.status,
                 trust_score=report.integrity_score,
                 report_created_at=report.created_at,
-                summary=json.loads(report.summary_json) if include_summary and report.summary_json else None,
+                summary=summary,
             )
-            for report, job in rows
-        ],
+        )
+
+    return ForensicReportListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=items,
     )
