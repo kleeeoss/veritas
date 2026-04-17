@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Optional
 from uuid import uuid4
@@ -10,7 +10,7 @@ from .database import Base
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class VerificationStatus(str, Enum):
@@ -30,8 +30,8 @@ class VerificationJob(Base):
     storage_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="local")
     s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=VerificationStatus.uploaded.value)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
     forensic_report: Mapped[Optional["ForensicReport"]] = relationship(back_populates="verification_job", uselist=False)
 
@@ -43,6 +43,6 @@ class ForensicReport(Base):
     job_id: Mapped[str] = mapped_column(String(64), ForeignKey("verification_jobs.id"), unique=True, nullable=False)
     integrity_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     summary_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
 
     verification_job: Mapped[VerificationJob] = relationship(back_populates="forensic_report")

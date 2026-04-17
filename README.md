@@ -13,7 +13,10 @@ Phase 1 scaffold completed:
 ## Run locally
 
 ```bash
-cd /home/runner/work/veritas/veritas/backend
+cd backend
 python -m pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+Set `DATABASE_URL` to your PostgreSQL connection string for production.  
+Phase 1 defaults to a local SQLite file for quick startup.

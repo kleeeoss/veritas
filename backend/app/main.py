@@ -1,6 +1,7 @@
 import os
 import shutil
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .database import get_db, init_db
-from .models import ForensicReport, VerificationJob, VerificationStatus
+from .models import VerificationJob, VerificationStatus, utc_now
 
 
 class UploadResponse(BaseModel):
@@ -23,14 +24,17 @@ class UploadResponse(BaseModel):
     uploaded_at: datetime
 
 
-app = FastAPI(title="Project Veritas Forensics API", version="0.1.0")
 upload_dir = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 
 
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     upload_dir.mkdir(parents=True, exist_ok=True)
     init_db()
+    yield
+
+
+app = FastAPI(title="Project Veritas Forensics API", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -53,7 +57,7 @@ async def upload_for_verification(
     with stored_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     mock_s3_key = f"temp-uploads/{stored_name}"
     job = VerificationJob(
         original_filename=file.filename,
@@ -65,10 +69,6 @@ async def upload_for_verification(
         updated_at=now,
     )
     db.add(job)
-    db.flush()
-
-    report = ForensicReport(job_id=job.id, integrity_score=None, summary_json=None, created_at=now)
-    db.add(report)
     db.commit()
 
     return UploadResponse(
