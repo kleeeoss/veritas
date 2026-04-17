@@ -1,9 +1,0 @@
-fastapi
-uvicorn         # <-- The missing package
-requests
-python-multipart
-cryptography
-qrcode
-Pillow
-pytesseract
-httpx
