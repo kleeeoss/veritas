@@ -87,8 +87,8 @@ graph TD
 
 ### 2) Clone Repository
 ```bash
-git clone https://github.com/kleeeoss/veritas.git
-cd veritas
+git clone <your-repo-url>
+cd <repo-folder>
 ```
 
 ### 3) Backend Environment Setup
@@ -162,6 +162,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | GET | `/api/reports` | List forensic reports (`include_summary`, `limit`, `offset`) |
 
 ## License & Disclaimer
-No license file is currently included in this repository snapshot. Add a `LICENSE` file (for example, MIT/Apache-2.0) before production use or external redistribution.
+No license file is currently included in this repository snapshot. Until a license is added, treat the code as **all rights reserved** and do not assume redistribution rights. Add a formal `LICENSE` file (for example, MIT/Apache-2.0) before production use or external distribution.
 
 **Disclaimer:** Veritas currently uses deterministic placeholder forensic engines for pipeline scaffolding. It is not a substitute for legally certified forensic examination, national digital-forensics standards, or judicial evidentiary procedures without additional validation, model hardening, and governance controls.
