@@ -2,7 +2,7 @@
 **Digital media integrity verification platform that closes the trust deficit with explainable forensic scoring.**
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115.12-009688?logo=fastapi&logoColor=white)
 ![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00?logo=sqlalchemy&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-Default-003B57?logo=sqlite&logoColor=white)
 ![PostgreSQL Ready](https://img.shields.io/badge/PostgreSQL-Production-4169E1?logo=postgresql&logoColor=white)
@@ -115,7 +115,7 @@ set +a
 ```
 
 > For PostgreSQL, set `DATABASE_URL` to e.g.:
-> `postgresql+psycopg://<user>:<password>@localhost:5432/veritas`
+> `postgresql://<user>:<password>@localhost:5432/veritas`
 
 ### 5) Start FastAPI Backend
 ```bash
