@@ -93,7 +93,7 @@ cd veritas
 
 ### 3) Backend Environment Setup
 ```bash
-cd /home/runner/work/veritas/veritas/backend
+cd backend
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
@@ -101,7 +101,7 @@ python -m pip install -r requirements.txt
 ```
 
 ### 4) Environment Variables (`.env` template)
-Create `/home/runner/work/veritas/veritas/backend/.env`:
+Create `backend/.env`:
 ```bash
 DATABASE_URL=sqlite:///./veritas_phase1.db
 UPLOAD_DIR=./uploads
@@ -110,7 +110,7 @@ UPLOAD_DIR=./uploads
 Load variables in your shell:
 ```bash
 set -a
-source /home/runner/work/veritas/veritas/backend/.env
+source backend/.env
 set +a
 ```
 
@@ -119,7 +119,7 @@ set +a
 
 ### 5) Start FastAPI Backend
 ```bash
-cd /home/runner/work/veritas/veritas/backend
+cd backend
 source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
