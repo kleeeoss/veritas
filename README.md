@@ -137,7 +137,10 @@ cd /path/to/frontend
 npm install
 npm run dev
 ```
-Configure frontend API base URL to `http://localhost:8000`.
+Set the frontend API base URL via `.env.local`:
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
 ## Usage Flow
 1. Upload a media/file artifact to create a verification job.
