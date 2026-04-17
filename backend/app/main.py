@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .database import get_db, init_db
-from .models import VerificationJob, VerificationStatus, utc_now
+from .forensics_core import (
+    aggregate_trust_score,
+    analyze_ela,
+    analyze_metadata,
+    verify_signature_siamese,
+)
+from .models import ForensicReport, VerificationJob, VerificationStatus, utc_now
 
 
 class UploadResponse(BaseModel):
@@ -22,6 +29,14 @@ class UploadResponse(BaseModel):
     mock_s3_key: str
     status: str
     uploaded_at: datetime
+
+
+class VerificationRunResponse(BaseModel):
+    job_id: str
+    status: str
+    trust_score: float
+    passed: bool
+    report_created_at: datetime
 
 
 upload_dir = Path(os.getenv("UPLOAD_DIR", "./uploads"))
@@ -80,4 +95,63 @@ async def upload_for_verification(
         mock_s3_key=mock_s3_key,
         status=job.status,
         uploaded_at=now,
+    )
+
+
+@app.post("/api/verify/{job_id}/run", response_model=VerificationRunResponse)
+def run_verification(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> VerificationRunResponse:
+    job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Verification job not found.")
+
+    file_path = Path(job.stored_path)
+    if not file_path.exists():
+        job.status = VerificationStatus.failed.value
+        job.updated_at = utc_now()
+        db.commit()
+        raise HTTPException(status_code=400, detail="Stored file is missing.")
+
+    job.status = VerificationStatus.processing.value
+    job.updated_at = utc_now()
+    db.commit()
+
+    ela_result = analyze_ela(str(file_path))
+    metadata_result = analyze_metadata(str(file_path))
+    signature_result = verify_signature_siamese(str(file_path))
+    aggregation = aggregate_trust_score(ela_result, metadata_result, signature_result)
+
+    summary = {
+        "ela": ela_result,
+        "metadata": metadata_result,
+        "signature": signature_result,
+        "aggregation": aggregation,
+    }
+
+    report = db.query(ForensicReport).filter(ForensicReport.job_id == job.id).first()
+    if report is None:
+        report = ForensicReport(
+            job_id=job.id,
+            integrity_score=aggregation["trust_score"],
+            summary_json=json.dumps(summary),
+            created_at=utc_now(),
+        )
+        db.add(report)
+    else:
+        report.integrity_score = aggregation["trust_score"]
+        report.summary_json = json.dumps(summary)
+
+    job.status = VerificationStatus.completed.value
+    job.updated_at = utc_now()
+    db.commit()
+    db.refresh(report)
+
+    return VerificationRunResponse(
+        job_id=job.id,
+        status=job.status,
+        trust_score=aggregation["trust_score"],
+        passed=aggregation["passed"],
+        report_created_at=report.created_at,
     )

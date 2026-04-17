@@ -1,6 +1,6 @@
 # Project Veritas (Rebuild)
 
-Phase 1 and Phase 2 scaffold completed:
+Phase 1, Phase 2, and Phase 3 scaffold completed:
 
 - Clean-slate repository reset
 - FastAPI backend initialized
@@ -13,6 +13,9 @@ Phase 1 and Phase 2 scaffold completed:
   - `analyze_ela(image_path)`
   - `analyze_metadata(file_path)`
   - `verify_signature_siamese(image_path)`
+- Trust-score aggregation and report persistence added:
+  - `aggregate_trust_score(...)`
+  - `POST /api/verify/{job_id}/run`
 
 ## Run locally
 

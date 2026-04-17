@@ -38,3 +38,33 @@ def analyze_metadata(file_path: str) -> dict[str, Any]:
 def verify_signature_siamese(image_path: str) -> dict[str, Any]:
     _ = Path(image_path)
     return _mock_result(image_path, minimum_score=45)
+
+
+def aggregate_trust_score(
+    ela_result: dict[str, Any],
+    metadata_result: dict[str, Any],
+    signature_result: dict[str, Any],
+) -> dict[str, Any]:
+    weights = {
+        "ela": 0.4,
+        "metadata": 0.2,
+        "signature": 0.4,
+    }
+
+    ela_score = float(ela_result.get("confidence_score", 0.0))
+    metadata_score = float(metadata_result.get("confidence_score", 0.0))
+    signature_score = float(signature_result.get("confidence_score", 0.0))
+
+    weighted_score = (
+        ela_score * weights["ela"]
+        + metadata_score * weights["metadata"]
+        + signature_score * weights["signature"]
+    )
+
+    normalized_score = round(max(0.0, min(100.0, weighted_score)), 2)
+    passed = normalized_score >= 70.0
+
+    return {
+        "trust_score": normalized_score,
+        "passed": passed,
+    }
