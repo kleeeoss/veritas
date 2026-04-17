@@ -162,6 +162,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | GET | `/api/reports` | List forensic reports (`include_summary`, `limit`, `offset`) |
 
 ## License & Disclaimer
-This project is intended for open-source distribution under the MIT model; add a `LICENSE` file before production or external redistribution if your organization has not yet finalized licensing.
+No license file is currently included in this repository snapshot. Add a `LICENSE` file (for example, MIT/Apache-2.0) before production use or external redistribution.
 
 **Disclaimer:** Veritas currently uses deterministic placeholder forensic engines for pipeline scaffolding. It is not a substitute for legally certified forensic examination, national digital-forensics standards, or judicial evidentiary procedures without additional validation, model hardening, and governance controls.
